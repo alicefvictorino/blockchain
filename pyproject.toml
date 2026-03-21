@@ -1,0 +1,33 @@
+[project]
+name = "blockchain"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Alice Victorino, Maria Luiza Melo, Mateus Figueiredo"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi (>=0.135.1,<0.136.0)",
+    "uvicorn (>=0.42.0,<0.43.0)",
+    "kafka-python (>=2.3.0,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+package-mode = false
+
+[dependency-groups]
+dev = [
+    "pre-commit (>=4.5.1,<5.0.0)",
+    "ruff (>=0.15.7,<0.16.0)"
+]
+
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
