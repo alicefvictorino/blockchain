@@ -24,10 +24,5 @@ package-mode = false
 
 [dependency-groups]
 dev = [
-    "pre-commit (>=4.5.1,<5.0.0)",
-    "ruff (>=0.15.7,<0.16.0)"
+    "fastapi-cli (>=0.0.24,<0.0.25)"
 ]
-
-
-[tool.ruff.lint]
-select = ["E", "F", "I"]
