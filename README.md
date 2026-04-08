@@ -7,7 +7,7 @@ O projeto utiliza Poetry para gerenciamento de dependências, devido à sua faci
 
 ---
 
-## 1. Clonar o repositório
+## 1. Clonar o repositório e entrar na pasta do projeto
 
 No terminal:
 
@@ -38,4 +38,32 @@ poetry install
 * instalar todas as dependências
 
 ---
+
+## 4. Subir os contêineres (necessário ter docker instalado)
+
+```bash
+docker compose up -d
+```
+
+## 5. Rodar a API localmente
+
+```bash
+poetry run fastapi dev
+```
+
+## 6. Rodar a aplicação desktop localmente
+
+### 6.1. Caso esteja utilizando algumas distros de Ubuntu como 24.04, será necessário instalar o tkinter
+
+```bash
+sudo apt update
+sudo apt install -y python3-tk
+```
+
+### 6.2. Rodar a aplicação desktop no terminal
+
+```bash
+sudo apt update
+sudo apt install -y python3-tk
+```
 
