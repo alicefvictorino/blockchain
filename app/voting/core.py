@@ -98,17 +98,3 @@ def gerar_voto_cego(candidate_id, n, e, nullifier=None):
 def finalizar_assinatura(s_cega, r, n):
     """Remove a ofuscacao da assinatura retornada pela AR."""
     return desofuscar_assinatura(s_cega, r, n)
-
-
-# gera o json 1 ofuscado, mantido por compatibilidade com a interface antiga
-def gerar_pacote_voto_cego(candidato, n, e):
-
-    serial = secrets.token_hex(16)
-
-    texto_voto = criar_texto_voto(candidato, serial)
-    m = _hash_texto_para_inteiro(texto_voto)
-    m_cega, r = ofuscar_mensagem(m, n, e)
-
-    json_1 = {"mensagem_ofuscada": m_cega}
-
-    return json_1, r, texto_voto

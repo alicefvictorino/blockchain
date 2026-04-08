@@ -2,7 +2,6 @@
 
 import logging
 import threading
-import time
 
 from app.config import (
     CHAVE_AR_D,
@@ -29,12 +28,7 @@ class RuntimeNo:
     """Coordena AR, mempool, blockchain, mineracao e consumers Kafka."""
 
     def __init__(self, dificuldade=DIFICULDADE_MINERACAO):
-        if CHAVE_AR_N and CHAVE_AR_E and CHAVE_AR_D:
-            self.chave_n = int(CHAVE_AR_N)
-            self.chave_e = int(CHAVE_AR_E)
-            self.chave_d = int(CHAVE_AR_D)
-        else:
-            self.chave_n, self.chave_e, self.chave_d = gerar_chaves_ar()
+        self.chave_n, self.chave_e, self.chave_d = self._carregar_chaves_ar()
         self.mempool = Mempool()
         self.blockchain = Blockchain(
             difficulty=dificuldade,
@@ -42,11 +36,42 @@ class RuntimeNo:
         )
         self._lock = threading.RLock()
 
+    def _carregar_chaves_ar(self):
+        """Carrega as chaves da AR do ambiente ou gera um par novo para demo local."""
+        chaves = (
+            ("CHAVE_AR_N", CHAVE_AR_N),
+            ("CHAVE_AR_E", CHAVE_AR_E),
+            ("CHAVE_AR_D", CHAVE_AR_D),
+        )
+
+        if all(valor in (None, "") for _, valor in chaves):
+            return gerar_chaves_ar()
+
+        faltando = [nome for nome, valor in chaves if valor in (None, "")]
+        if faltando:
+            raise RuntimeError(
+                "Configuracao incompleta da Autoridade Registradora. "
+                f"Variaveis ausentes: {', '.join(faltando)}."
+            )
+
+        try:
+            chave_n = int(CHAVE_AR_N or "")
+            chave_e = int(CHAVE_AR_E or "")
+            chave_d = int(CHAVE_AR_D or "")
+            return chave_n, chave_e, chave_d
+        except ValueError as erro:
+            raise RuntimeError(
+                "Configuracao invalida da Autoridade Registradora: "
+                "CHAVE_AR_N, CHAVE_AR_E e CHAVE_AR_D devem ser inteiros."
+            ) from erro
+
     def obter_chave_publica(self):
         return {"n": str(self.chave_n), "e": str(self.chave_e)}
 
     def assinar_voto_cego(self, mensagem_ofuscada):
-        assinatura_cega = assinar_mensagem(int(mensagem_ofuscada), self.chave_d, self.chave_n)
+        assinatura_cega = assinar_mensagem(
+            int(mensagem_ofuscada), self.chave_d, self.chave_n
+        )
         return {"assinatura_cega": str(assinatura_cega)}
 
     def validar_transacao(self, transacao):
