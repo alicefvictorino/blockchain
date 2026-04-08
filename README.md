@@ -48,7 +48,7 @@ docker compose up -d
 ## 5. Rodar a API localmente
 
 ```bash
-poetry run fastapi dev
+poetry run api
 ```
 
 ## 6. Rodar a aplicação desktop localmente
@@ -63,7 +63,6 @@ sudo apt install -y python3-tk
 ### 6.2. Rodar a aplicação desktop no terminal
 
 ```bash
-sudo apt update
-sudo apt install -y python3-tk
+poetry run urna
 ```
 
