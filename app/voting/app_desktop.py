@@ -67,6 +67,11 @@ def consultar_forks():
     return requisitar_api("GET", "/forks")
 
 
+def consultar_alertas_seguranca():
+    """Consulta os alertas de seguranca produzidos pelo no."""
+    return requisitar_api("GET", "/security-alerts")
+
+
 def encurtar_texto(valor, tamanho=14):
     """Encurta hashes e ids longos para facilitar a leitura."""
     texto = str(valor)
@@ -97,6 +102,38 @@ def resumir_transacao(transacao):
     return f"{candidato} | tx {tx_id} | serial {nullifier}"
 
 
+def formatar_horario_evento(timestamp_evento):
+    """Formata o horario de um evento do backend."""
+    if timestamp_evento in (None, ""):
+        return "--:--:--"
+    return time.strftime("%H:%M:%S", time.localtime(timestamp_evento))
+
+
+def resumir_alerta(alerta):
+    """Resume um alerta de seguranca para exibicao no monitor."""
+    tipo = alerta.get("type")
+    horario = formatar_horario_evento(alerta.get("detected_at"))
+    if tipo == "gasto_duplo_detectado":
+        return (
+            f"Gasto duplo detectado | {horario} | "
+            f"serial {encurtar_texto(alerta.get('nullifier', 'sem-nullifier'))} | "
+            f"tx {encurtar_texto(alerta.get('tx_id', 'sem-tx'))}"
+        )
+    return (
+        f"Alerta de seguranca | {horario} | "
+        f"{alerta.get('reason', 'sem motivo informado')}"
+    )
+
+
+def filtrar_alertas_gasto_duplo(alertas):
+    """Retorna apenas os alertas relacionados a gasto duplo."""
+    return [
+        alerta
+        for alerta in alertas.get("events", [])
+        if alerta.get("type") == "gasto_duplo_detectado"
+    ]
+
+
 def montar_relacao_blocos(cadeia):
     """Monta uma linha simples mostrando o encadeamento da blockchain."""
     if not cadeia:
@@ -116,12 +153,15 @@ def montar_relacao_blocos(cadeia):
     return relacao
 
 
-def montar_texto_monitor(status_api, cadeia, mempool, forks):
+def montar_texto_monitor(status_api, cadeia, mempool, forks, alertas):
     """Monta o texto exibido no monitor da rede."""
     horario = time.strftime("%H:%M:%S")
     blocos = cadeia.get("chain", [])
     transacoes_pendentes = mempool.get("transactions", [])
     forks_resumo = forks.get("forks", [])
+    alertas_recentes = alertas.get("events", [])
+    alertas_gasto_duplo = filtrar_alertas_gasto_duplo(alertas)
+    ultimo_alerta_gasto_duplo = alertas_gasto_duplo[-1] if alertas_gasto_duplo else None
 
     linhas = [
         "MONITOR DA REDE",
@@ -131,16 +171,51 @@ def montar_texto_monitor(status_api, cadeia, mempool, forks):
         (
             f"Blocos: {cadeia.get('length', 0)} | "
             f"Mempool: {mempool.get('count', 0)} | "
-            f"Forks: {forks.get('count', 0)}"
+            f"Forks: {forks.get('count', 0)} | "
+            f"Alertas: {alertas.get('count', 0)}"
         ),
         "",
-        "RELACAO ENTRE BLOCOS",
-        "--------------------",
-        montar_relacao_blocos(blocos),
-        "",
-        "CADEIA PRINCIPAL",
-        "---------------",
+        "STATUS DE SEGURANCA",
+        "-------------------",
     ]
+
+    if ultimo_alerta_gasto_duplo is None:
+        linhas.extend(
+            [
+                "Nenhum ataque de gasto duplo detectado.",
+                "",
+            ]
+        )
+    else:
+        linhas.extend(
+            [
+                "ATAQUE DE GASTO DUPLO DETECTADO",
+                (
+                    "Ultimo evento: "
+                    f"{formatar_horario_evento(ultimo_alerta_gasto_duplo.get('detected_at'))}"
+                ),
+                (
+                    "Serial reutilizado: "
+                    f"{encurtar_texto(ultimo_alerta_gasto_duplo.get('nullifier', 'sem-nullifier'))}"
+                ),
+                (
+                    "Transacao rejeitada: "
+                    f"{encurtar_texto(ultimo_alerta_gasto_duplo.get('tx_id', 'sem-tx'))}"
+                ),
+                "",
+            ]
+        )
+
+    linhas.extend(
+        [
+            "RELACAO ENTRE BLOCOS",
+            "--------------------",
+            montar_relacao_blocos(blocos),
+            "",
+            "CADEIA PRINCIPAL",
+            "---------------",
+        ]
+    )
 
     if not blocos:
         linhas.append("Nenhum bloco encontrado.")
@@ -197,6 +272,19 @@ def montar_texto_monitor(status_api, cadeia, mempool, forks):
                 f"hash pai {encurtar_texto(fork['fork_point_hash'])}"
             )
 
+    linhas.extend(
+        [
+            "",
+            "ALERTAS DE SEGURANCA",
+            "--------------------",
+        ]
+    )
+    if not alertas_recentes:
+        linhas.append("Nenhum alerta recente.")
+    else:
+        for alerta in alertas_recentes[-6:]:
+            linhas.append(f"- {resumir_alerta(alerta)}")
+
     return "\n".join(linhas) + "\n"
 
 
@@ -216,7 +304,7 @@ def main():
         "r_guardado": None,
         "texto_voto_guardado": None,
         "nullifier_guardado": None,
-        "ultima_transacao": None,
+        "ultima_transacao": {},
     }
     estado_monitor = {
         "auto_refresh": True,
@@ -224,6 +312,7 @@ def main():
         "ultimo_tamanho_cadeia": None,
         "ultimo_mempool": None,
         "ultimo_forks": None,
+        "ultimo_alerta_id": 0,
     }
 
     status_api_var = ctk.StringVar(value="API: não verificada")
@@ -232,6 +321,8 @@ def main():
     metric_blocos_var = ctk.StringVar(value="Blocos: --")
     metric_mempool_var = ctk.StringVar(value="Mempool: --")
     metric_forks_var = ctk.StringVar(value="Forks: --")
+    metric_alertas_var = ctk.StringVar(value="Alertas: --")
+    metric_ataque_var = ctk.StringVar(value="Ataque: nenhum")
     metric_atualizacao_var = ctk.StringVar(value="Última leitura: --:--:--")
     monitor_auto_var = ctk.StringVar(value="Monitor: automático")
 
@@ -291,9 +382,10 @@ def main():
         cadeia = consultar_blockchain()
         mempool = consultar_mempool()
         forks = consultar_forks()
-        return status, cadeia, mempool, forks
+        alertas = consultar_alertas_seguranca()
+        return status, cadeia, mempool, forks, alertas
 
-    def registrar_eventos_da_rede(cadeia, mempool, forks):
+    def registrar_eventos_da_rede(cadeia, mempool, forks, alertas):
         tamanho_cadeia = cadeia.get("length", 0)
         hash_topo = None
         if cadeia.get("chain"):
@@ -301,12 +393,18 @@ def main():
 
         mempool_count = mempool.get("count", 0)
         forks_count = forks.get("count", 0)
+        alertas_recentes = alertas.get("events", [])
+        ultimo_alerta_id = max(
+            (alerta.get("event_id", 0) for alerta in alertas_recentes),
+            default=0,
+        )
 
         if estado_monitor["ultimo_tamanho_cadeia"] is None:
             estado_monitor["ultimo_tamanho_cadeia"] = tamanho_cadeia
             estado_monitor["ultimo_topo"] = hash_topo
             estado_monitor["ultimo_mempool"] = mempool_count
             estado_monitor["ultimo_forks"] = forks_count
+            estado_monitor["ultimo_alerta_id"] = ultimo_alerta_id
             return
 
         if tamanho_cadeia > estado_monitor["ultimo_tamanho_cadeia"]:
@@ -316,8 +414,7 @@ def main():
             )
         elif hash_topo != estado_monitor["ultimo_topo"] and hash_topo is not None:
             registrar_log(
-                "[REDE] O topo da cadeia mudou para "
-                f"{encurtar_texto(hash_topo)}.\n"
+                f"[REDE] O topo da cadeia mudou para {encurtar_texto(hash_topo)}.\n"
             )
 
         if mempool_count != estado_monitor["ultimo_mempool"]:
@@ -330,40 +427,61 @@ def main():
                 f"[REDE] Novo fork detectado. Total de forks: {forks_count}.\n"
             )
 
+        novos_alertas = [
+            alerta
+            for alerta in alertas_recentes
+            if alerta.get("event_id", 0) > estado_monitor["ultimo_alerta_id"]
+        ]
+        for alerta in novos_alertas:
+            if alerta.get("type") == "gasto_duplo_detectado":
+                registrar_log(
+                    "[ALERTA] Ataque de gasto duplo detectado. "
+                    f"Serial {encurtar_texto(alerta.get('nullifier', 'sem-nullifier'))} | "
+                    f"tx {encurtar_texto(alerta.get('tx_id', 'sem-tx'))}.\n"
+                )
+            else:
+                registrar_log(f"[ALERTA] {resumir_alerta(alerta)}.\n")
+
         estado_monitor["ultimo_tamanho_cadeia"] = tamanho_cadeia
         estado_monitor["ultimo_topo"] = hash_topo
         estado_monitor["ultimo_mempool"] = mempool_count
         estado_monitor["ultimo_forks"] = forks_count
+        estado_monitor["ultimo_alerta_id"] = ultimo_alerta_id
 
     def atualizar_monitor(logar_eventos=True):
         try:
-            status, cadeia, mempool, forks = obter_estado_rede()
+            status, cadeia, mempool, forks, alertas = obter_estado_rede()
         except requests.RequestException as erro:
             definir_texto(
                 caixa_monitor,
-                "MONITOR DA REDE\n================\nAPI indisponível.\n"
-                f"Erro: {erro}\n",
+                f"MONITOR DA REDE\n================\nAPI indisponível.\nErro: {erro}\n",
             )
             status_api_var.set("API: indisponível")
             metric_blocos_var.set("Blocos: --")
             metric_mempool_var.set("Mempool: --")
             metric_forks_var.set("Forks: --")
+            metric_alertas_var.set("Alertas: --")
+            metric_ataque_var.set("Ataque: --")
             metric_atualizacao_var.set("Última leitura: falhou")
             return
 
-        texto_monitor = montar_texto_monitor(status, cadeia, mempool, forks)
+        texto_monitor = montar_texto_monitor(status, cadeia, mempool, forks, alertas)
         definir_texto(caixa_monitor, texto_monitor)
+        alertas_gasto_duplo = filtrar_alertas_gasto_duplo(alertas)
 
         status_api_var.set("API: conectada")
         metric_blocos_var.set(f"Blocos: {cadeia.get('length', 0)}")
         metric_mempool_var.set(f"Mempool: {mempool.get('count', 0)}")
         metric_forks_var.set(f"Forks: {forks.get('count', 0)}")
-        metric_atualizacao_var.set(
-            f"Última leitura: {time.strftime('%H:%M:%S')}"
-        )
+        metric_alertas_var.set(f"Alertas: {alertas.get('count', 0)}")
+        if alertas_gasto_duplo:
+            metric_ataque_var.set("Ataque: gasto duplo detectado")
+        else:
+            metric_ataque_var.set("Ataque: nenhum")
+        metric_atualizacao_var.set(f"Última leitura: {time.strftime('%H:%M:%S')}")
 
         if logar_eventos:
-            registrar_eventos_da_rede(cadeia, mempool, forks)
+            registrar_eventos_da_rede(cadeia, mempool, forks, alertas)
 
     def ciclo_monitor():
         if estado_monitor["auto_refresh"]:
@@ -406,6 +524,11 @@ def main():
 
     def ao_clicar_forks():
         consultar_json("Forks", consultar_forks, "/forks")
+
+    def ao_clicar_alertas():
+        consultar_json(
+            "Alertas de segurança", consultar_alertas_seguranca, "/security-alerts"
+        )
 
     def ao_clicar_votar():
         from app.voting.core import finalizar_assinatura, gerar_voto_cego
@@ -514,8 +637,8 @@ def main():
             f"{json.dumps(resposta_api, indent=2, ensure_ascii=False)}\n\n"
         )
         registrar_log(
-            "[ATAQUE] Agora observe no monitor se a mempool ou a cadeia "
-            "rejeitam o nullifier duplicado.\n"
+            "[ATAQUE] Agora observe a seção ALERTAS DE SEGURANCA no monitor "
+            "para ver a detecção do nullifier duplicado.\n"
         )
         status_acao_var.set("Última ação: tentativa de gasto duplo enviada")
         atualizar_monitor(logar_eventos=True)
@@ -558,19 +681,28 @@ def main():
         (metric_blocos_var, 2),
         (metric_mempool_var, 3),
     ):
-        label = ctk.CTkLabel(
-            linha_1,
-            text=texto if isinstance(texto, str) else None,
-            textvariable=None if isinstance(texto, str) else texto,
-            font=("Consolas", 14, "bold"),
-        )
+        if isinstance(texto, str):
+            label = ctk.CTkLabel(
+                linha_1,
+                text=texto,
+                font=("Consolas", 14, "bold"),
+            )
+        else:
+            label = ctk.CTkLabel(
+                linha_1,
+                text="",
+                textvariable=texto,
+                font=("Consolas", 14, "bold"),
+            )
         label.grid(row=0, column=coluna, padx=12, pady=4, sticky="w")
 
     for texto, coluna in (
         (status_api_var, 0),
         (metric_forks_var, 1),
-        (metric_atualizacao_var, 2),
-        (monitor_auto_var, 3),
+        (metric_alertas_var, 2),
+        (metric_ataque_var, 3),
+        (metric_atualizacao_var, 4),
+        (monitor_auto_var, 5),
     ):
         label = ctk.CTkLabel(
             linha_2,
@@ -671,6 +803,7 @@ def main():
         ("VER BLOCKCHAIN JSON", ao_clicar_blockchain),
         ("VER MEMPOOL JSON", ao_clicar_mempool),
         ("VER FORKS JSON", ao_clicar_forks),
+        ("VER ALERTAS JSON", ao_clicar_alertas),
         ("LIMPAR TERMINAL", limpar_terminal),
     )
 

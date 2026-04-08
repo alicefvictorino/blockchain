@@ -2,6 +2,8 @@
 
 import logging
 import threading
+import time
+from collections import deque
 
 from app.config import (
     CHAVE_AR_D,
@@ -35,6 +37,8 @@ class RuntimeNo:
             transaction_validator=self.validar_transacao,
         )
         self._lock = threading.RLock()
+        self._alertas_seguranca = deque(maxlen=20)
+        self._sequencia_alertas = 0
 
     def _carregar_chaves_ar(self):
         """Carrega as chaves da AR do ambiente ou gera um par novo para demo local."""
@@ -114,6 +118,7 @@ class RuntimeNo:
             )
 
         if not adicionada:
+            self._registrar_alerta_transacao(transacao, motivo, origem="mempool")
             return {"status": "rejeitada", "motivo": motivo}
 
         return {"status": "aceita", "tx_id": transacao["tx_id"]}
@@ -162,3 +167,28 @@ class RuntimeNo:
 
     def mempool_serializada(self):
         return self.mempool.listar()
+
+    def alertas_seguranca_serializados(self):
+        with self._lock:
+            return list(self._alertas_seguranca)
+
+    def _registrar_alerta_transacao(self, transacao, motivo, origem):
+        if motivo != "nullifier duplicado":
+            return None
+
+        with self._lock:
+            self._sequencia_alertas += 1
+            alerta = {
+                "event_id": self._sequencia_alertas,
+                "type": "gasto_duplo_detectado",
+                "severity": "alta",
+                "origin": origem,
+                "reason": motivo,
+                "message": "Tentativa de reutilizar um nullifier ja utilizado.",
+                "tx_id": transacao.get("tx_id"),
+                "nullifier": transacao.get("nullifier"),
+                "candidate_id": transacao.get("candidate_id"),
+                "detected_at": time.time(),
+            }
+            self._alertas_seguranca.append(alerta)
+            return alerta

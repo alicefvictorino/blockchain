@@ -138,3 +138,10 @@ def visualizar_mempool():
     """Retorna as transacoes pendentes na mempool."""
     transacoes = runtime_no.mempool_serializada()
     return {"count": len(transacoes), "transactions": transacoes}
+
+
+@app.get("/security-alerts")
+def visualizar_alertas_de_seguranca():
+    """Retorna os alertas recentes de seguranca observados pelo no."""
+    alertas = runtime_no.alertas_seguranca_serializados()
+    return {"count": len(alertas), "events": alertas}
