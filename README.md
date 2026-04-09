@@ -65,4 +65,3 @@ sudo apt install -y python3-tk
 ```bash
 poetry run urna
 ```
-
