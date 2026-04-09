@@ -138,3 +138,9 @@ def visualizar_mempool():
     """Retorna as transacoes pendentes na mempool."""
     transacoes = runtime_no.mempool_serializada()
     return {"count": len(transacoes), "transactions": transacoes}
+
+
+@app.post("/debug/simular-fork")
+def simular_fork():
+    """Gera um fork local de demonstracao e tenta provocar reorganizacao."""
+    return runtime_no.simular_fork()

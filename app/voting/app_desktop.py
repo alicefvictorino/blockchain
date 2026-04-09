@@ -67,6 +67,11 @@ def consultar_forks():
     return requisitar_api("GET", "/forks")
 
 
+def simular_fork_api():
+    """Solicita ao no a simulacao controlada de um fork."""
+    return requisitar_api("POST", "/debug/simular-fork")
+
+
 def encurtar_texto(valor, tamanho=14):
     """Encurta hashes e ids longos para facilitar a leitura."""
     texto = str(valor)
@@ -210,7 +215,7 @@ def main():
     janela = ctk.CTk()
     janela.geometry("1280x860")
     janela.minsize(1160, 760)
-    janela.title("Painel da Demo de Votação e Blockchain")
+    janela.title("Painel de Votação e Blockchain")
 
     memoria_cliente = {
         "r_guardado": None,
@@ -236,10 +241,12 @@ def main():
     monitor_auto_var = ctk.StringVar(value="Monitor: automático")
 
     def definir_texto(widget, texto):
+        posicao_atual = widget.yview()[0]
         widget.configure(state="normal")
         widget.delete("0.0", "end")
         widget.insert("0.0", texto)
         widget.configure(state="disabled")
+        widget.yview_moveto(posicao_atual)
 
     def anexar_texto(widget, texto):
         widget.configure(state="normal")
@@ -316,8 +323,7 @@ def main():
             )
         elif hash_topo != estado_monitor["ultimo_topo"] and hash_topo is not None:
             registrar_log(
-                "[REDE] O topo da cadeia mudou para "
-                f"{encurtar_texto(hash_topo)}.\n"
+                f"[REDE] O topo da cadeia mudou para {encurtar_texto(hash_topo)}.\n"
             )
 
         if mempool_count != estado_monitor["ultimo_mempool"]:
@@ -341,8 +347,7 @@ def main():
         except requests.RequestException as erro:
             definir_texto(
                 caixa_monitor,
-                "MONITOR DA REDE\n================\nAPI indisponível.\n"
-                f"Erro: {erro}\n",
+                f"MONITOR DA REDE\n================\nAPI indisponível.\nErro: {erro}\n",
             )
             status_api_var.set("API: indisponível")
             metric_blocos_var.set("Blocos: --")
@@ -358,9 +363,7 @@ def main():
         metric_blocos_var.set(f"Blocos: {cadeia.get('length', 0)}")
         metric_mempool_var.set(f"Mempool: {mempool.get('count', 0)}")
         metric_forks_var.set(f"Forks: {forks.get('count', 0)}")
-        metric_atualizacao_var.set(
-            f"Última leitura: {time.strftime('%H:%M:%S')}"
-        )
+        metric_atualizacao_var.set(f"Última leitura: {time.strftime('%H:%M:%S')}")
 
         if logar_eventos:
             registrar_eventos_da_rede(cadeia, mempool, forks)
@@ -492,11 +495,9 @@ def main():
             return
 
         transacao_ataque = dict(ultima_transacao)
-        transacao_ataque["tx_id"] = uuid.uuid4().hex
-        transacao_ataque["timestamp"] = time.time()
 
         registrar_log(
-            "[ATAQUE] Tentando reenviar o último voto com o mesmo nullifier.\n\n",
+            "[ATAQUE] Reenviando exatamente o mesmo JSON do ultimo voto.\n\n",
             limpar=True,
         )
         registrar_log(
@@ -520,6 +521,27 @@ def main():
         status_acao_var.set("Última ação: tentativa de gasto duplo enviada")
         atualizar_monitor(logar_eventos=True)
 
+    def ao_clicar_simular_fork():
+        registrar_log(
+            "[FORK] Solicitando simulacao de fork ao no da blockchain...\n\n",
+            limpar=True,
+        )
+        try:
+            resposta = simular_fork_api()
+        except requests.RequestException as erro:
+            registrar_erro("Falha ao simular fork", erro)
+            return
+
+        registrar_log(
+            "[FORK] Resultado da simulacao:\n"
+            f"{json.dumps(resposta, indent=2, ensure_ascii=False)}\n\n"
+        )
+        registrar_log(
+            "[FORK] Veja no monitor se houve aumento em forks e mudanca no topo da cadeia.\n"
+        )
+        status_acao_var.set("Última ação: simulacao de fork executada")
+        atualizar_monitor(logar_eventos=True)
+
     topo_frame = ctk.CTkFrame(janela, fg_color="transparent")
     topo_frame.pack(fill="x", padx=20, pady=(20, 12))
 
@@ -528,7 +550,7 @@ def main():
 
     titulo = ctk.CTkLabel(
         cabecalho,
-        text="PAINEL DA DEMO DE VOTAÇÃO E BLOCKCHAIN",
+        text="PAINEL DE VOTAÇÃO E BLOCKCHAIN",
         font=("Consolas", 28, "bold"),
     )
     titulo.pack(anchor="w", padx=18, pady=(16, 4))
@@ -671,6 +693,7 @@ def main():
         ("VER BLOCKCHAIN JSON", ao_clicar_blockchain),
         ("VER MEMPOOL JSON", ao_clicar_mempool),
         ("VER FORKS JSON", ao_clicar_forks),
+        ("SIMULAR FORK", ao_clicar_simular_fork),
         ("LIMPAR TERMINAL", limpar_terminal),
     )
 
