@@ -139,8 +139,13 @@ def visualizar_mempool():
     transacoes = runtime_no.mempool_serializada()
     return {"count": len(transacoes), "transactions": transacoes}
 
-
 @app.post("/debug/simular-fork")
 def simular_fork():
     """Gera um fork local de demonstracao e tenta provocar reorganizacao."""
     return runtime_no.simular_fork()
+
+@app.get("/security-alerts")
+def visualizar_alertas_de_seguranca():
+    """Retorna os alertas recentes de seguranca observados pelo no."""
+    alertas = runtime_no.alertas_seguranca_serializados()
+    return {"count": len(alertas), "events": alertas}
